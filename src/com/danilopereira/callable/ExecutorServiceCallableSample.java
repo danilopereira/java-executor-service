@@ -5,34 +5,60 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class ExecutorServiceCallableSample {
 
-    public void submit() throws ExecutionException, InterruptedException {
+    public void submit() throws ExecutionException, InterruptedException, TimeoutException {
+        ExecutorService executorService = null;
 
-        ExecutorService fixedThreadPool = Executors.newFixedThreadPool(2);
-        try{
-            final Future<String> task1 = fixedThreadPool.submit(doSomethingExpensiveInCallable(Thread.currentThread().getName()));
-            System.out.println(task1.get());
+        try {
+            executorService = Executors.newFixedThreadPool(2);
+            Future<Double> task1 = executorService.submit(new Callable<Double>() {
 
-            final Future<String> task2 = fixedThreadPool.submit(doSomethingExpensiveInCallable(Thread.currentThread().getName()));
-            System.out.println(task2.get());
-            while(!task1.isDone() && !task2.isDone()){
-                Thread.sleep(1000);
-            }
-        }finally {
-            fixedThreadPool.shutdown();
-            fixedThreadPool.shutdownNow();
+                @Override
+                public Double call() throws Exception {
+                    System.out.println(String.format("starting expensive task thread %s",
+                            Thread.currentThread().getName()));
+                    Double returnedValue = someExpensiveRemoteCall();
+                    System.out.println(String.format("finished expensive task thread %s",
+                            Thread.currentThread().getName()));
+
+                    return returnedValue;
+                }
+            });
+
+            Future<Double> task2 = executorService.submit(() -> {
+                System.out.println(String.format("starting expensive task thread %s",
+                        Thread.currentThread().getName()));
+                Double returnedValue = someExpensiveRemoteCall();
+                System.out.println(String.format("finished expensive task thread %s",
+                        Thread.currentThread().getName()));
+
+                return returnedValue;
+            });
+
+            Double valueFromTask1 = task1.get(4, TimeUnit.SECONDS);
+            Double valueFromTask2 = task2.get(4, TimeUnit.SECONDS);
+
+            System.out.println(String.format("TaskFuture1 returned value %s and " +
+                    "TaskFuture2 returned value %s", valueFromTask1, valueFromTask2));
+
+        } finally {
+            executorService.shutdown();
+            executorService.shutdownNow();
         }
     }
 
-    private Callable<String> doSomethingExpensiveInCallable(String threadName) {
-        Callable<String> callableTask = () ->{
-            TimeUnit.MILLISECONDS.sleep(3000);
-            return String.format("Callable Task in thread %s", threadName);
-        };
+    private Double someExpensiveRemoteCall() {
 
-        return callableTask;
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException ex) {
+            ex.printStackTrace();
+        }
+        return ThreadLocalRandom.current().nextDouble() * 100;
     }
 }
